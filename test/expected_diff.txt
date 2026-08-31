@@ -7,3 +7,32 @@
 
 html  codegen.md            h4 is a heading, not a paragraph beginning with four hashes
 html  fence_and_escape.md   h4 is a heading, not a paragraph beginning with four hashes
+
+# Both of these are the same defect: the two line-oriented outputs had no
+# idea what a fenced code block was, so they applied markdown rules to code.
+text  bare-metal.md            code inside fences is left as written; a fence marker line becomes empty
+text  changelog.md             code inside fences is left as written; a fence marker line becomes empty
+text  codegen.md               code inside fences is left as written; a fence marker line becomes empty
+text  db.md                    code inside fences is left as written; a fence marker line becomes empty
+text  http-demos.md            code inside fences is left as written; a fence marker line becomes empty
+text  language-reference.md    code inside fences is left as written; a fence marker line becomes empty
+text  lsp.md                   code inside fences is left as written; a fence marker line becomes empty
+text  memory-model.md          code inside fences is left as written; a fence marker line becomes empty
+text  patterns.md              code inside fences is left as written; a fence marker line becomes empty
+text  reserved-names.md        code inside fences is left as written; a fence marker line becomes empty
+text  stdlib-reference.md      code inside fences is left as written; a fence marker line becomes empty
+text  tour.md                  code inside fences is left as written; a fence marker line becomes empty
+text  tutorial-redis-client.md code inside fences is left as written; a fence marker line becomes empty
+text  tutorial-rest-api.md     code inside fences is left as written; a fence marker line becomes empty
+text  tutorial-type-inference.md code inside fences is left as written; a fence marker line becomes empty
+text  tutorial.md              code inside fences is left as written; a fence marker line becomes empty
+text  fence_and_escape.md      code inside fences is left as written; a fence marker line becomes empty
+text  fence_unterminated.md    code inside fences is left as written; a fence marker line becomes empty
+
+toc   changelog.md             lines inside fenced code blocks are no longer counted as headings
+toc   codegen.md               lines inside fenced code blocks are no longer counted as headings
+toc   db.md                    lines inside fenced code blocks are no longer counted as headings
+toc   http-demos.md            lines inside fenced code blocks are no longer counted as headings
+toc   tutorial-rest-api.md     lines inside fenced code blocks are no longer counted as headings
+toc   tutorial.md              lines inside fenced code blocks are no longer counted as headings
+toc   fence_and_escape.md      lines inside fenced code blocks are no longer counted as headings

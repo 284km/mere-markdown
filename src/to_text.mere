@@ -1,56 +1,63 @@
-// markdown_to_text: convert Markdown-like text to plain text (Phase 36)
+// src/to_text.mere — a document, shown as plain text.
 //
-// Purpose: examples roadmap B5. Strip markdown decorations by scanning one
-//   character at a time with char_at and a StrBuf. Not a practical markdown
-//   parser — a limited "just remove inline markers" variant.
+// Plain text is the source with its decorations removed, which makes it the
+// output that needs the parse least and suffered most without it. It used to
+// look at one line at a time and had no idea what a fenced code block was, so it
+// stripped the markers out of code — the one place in a document where a `*` is
+// not a decoration.
 //
-// Supported markdown:
-//   - strip leading `#` / `##` / `###` (heading)
-//   - keep leading `- ` as-is (lists are preserved)
-//   - replace leading `> ` with `| ` (quote symbol conversion)
-//   - remove inline `*`, `_`, `` ` `` (bold / italic / code decoration)
-//
-// Execution mode: diff = 0 across all 4 backends — interp + C + LLVM + Wasm.
+// Line for line with the source, still. That is why the document has `Blank`:
+// HTML wants nothing to do with blank lines, and this cannot put them back.
 
-// Skip consecutive `#` at the start of the line
-let rec skip_hashes = fn (s: str) -> fn (i: int) ->
-  if i >= str_len s then i
-  else if char_at s i == "#" then skip_hashes s (i + 1)
-  else i;
+import "./parse.mere";
 
-// Skip leading spaces
-let rec skip_spaces = fn (s: str) -> fn (i: int) ->
-  if i >= str_len s then i
-  else if char_at s i == " " then skip_spaces s (i + 1)
-  else i;
-
-// Strip inline markers (drop `*`, `_`, `` ` ``, append everything else)
-let rec strip_inline = fn (s: str) -> fn (i: int) -> fn (acc: str) ->
+// Drop the inline markers. Top-level and self-recursive, like the finders in
+// to_html.mere, because that is the shape this compiler is comfortable with.
+let rec __md_strip = fn (s: str) -> fn (i: int) -> fn (acc: str) ->
   if i >= str_len s then acc
   else
     let c = char_at s i in
-    if c == "*" || c == "_" || c == "`" then strip_inline s (i + 1) acc
-    else strip_inline s (i + 1) (acc ++ c);
+    if c == "*" || c == "_" || c == "`" then __md_strip s (i + 1) acc
+    else __md_strip s (i + 1) (acc ++ c);
 
-let convert_line = fn (line: str) ->
-  if str_len line == 0 then ""
-  else if str_starts_with line "#" then
-    // heading: skip consecutive #'s and spaces, then strip inline markers
-    let h_end = skip_hashes line 0 in
-    let body_start = skip_spaces line h_end in
-    strip_inline line body_start ""
-  else if str_starts_with line "> " then
-    "| " ++ strip_inline line 2 ""
-  else
-    // Regular line (`-` lists also pass through as-is)
-    strip_inline line 0 "";
+module MdText {
 
-let render = fn (lines: str list) ->
+let strip_inline = fn (s: str) -> __md_strip s 0 "";
+
+// (depth - 1) levels of two spaces, the indent the source had.
+let indent_of = fn (depth: int) ->
+  let rec go = fn (d: int) -> fn (acc: str) ->
+    if d <= 1 then acc else go (d - 1) (acc ++ "  ")
+  in go depth "";
+
+let of_blocks = fn (bs: block list) ->
   region R {
     let b = strbuf_new () in
-    let _ = list_iter lines (fn (line: str) ->
-      let _ = strbuf_push b (convert_line line) in
-      strbuf_push b "\n") in
+    let emit = fn (t: str) ->
+      let _ = strbuf_push b t in
+      let _ = strbuf_push b "\n" in () in
+    let _ = list_iter bs (fn blk ->
+      match blk with
+      | Blank -> emit ""
+      | Heading (_lvl, text) -> emit (strip_inline text)
+      | Para ls -> list_iter ls (fn l -> emit (strip_inline l))
+      // A rule is a rule. The old converter stripped it as if it were emphasis,
+      // so `---` survived and `***` came out as an empty line.
+      | Hr src -> emit src
+      | Quote ts -> list_iter ts (fn t -> emit ("| " ++ strip_inline t))
+      | Table rows -> list_iter rows (fn r -> emit (strip_inline r))
+      | Bullets items -> list_iter items (fn (it: item) ->
+          emit (indent_of it.depth ++ it.marker ++ strip_inline it.text))
+      // The fences themselves are markup and go; what is between them is code
+      // and is left exactly as written. Stripping a `*` out of a program is the
+      // defect this whole repository was opened for.
+      | Fence (_lang, body, closed) ->
+        let _ = emit "" in
+        let _ = list_iter body emit in
+        if closed then emit "" else ()) in
     strbuf_to_str b
   };
 
+let render = fn (lines: str list) -> of_blocks (Md.parse lines);
+
+};   // end of `module MdText`

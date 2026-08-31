@@ -15,18 +15,18 @@ window.
     src/      the one being rewritten onto an AST
     scripts/parity.sh   runs both over both corpora and demands they agree
 
-**HTML now goes through a document.** `src/to_html.mere` is `parse` followed by
-`to_html`, and it emits the same bytes as the state machine it replaced. Text and
-the table of contents are still on the old path; they move next, and when they do
-they will stop disagreeing with HTML, which is a byte difference and therefore
-its own commit.
+**All three outputs now come off one parse.** `src/parse.mere` is the document;
+HTML, plain text, and the table of contents are views of it. HTML emits the same
+bytes as the state machine it replaced. The other two do not, and cannot: they
+used to apply markdown rules to the inside of fenced code blocks, and stopping is
+what the whole split was for.
 
 The rewrite has an oracle because the old implementation still runs. Every
 document goes through both, for all three outputs, and the bytes have to match.
 No expected output was written by hand.
 
 ```sh
-sh scripts/parity.sh              # 72 pairs, 0 mismatched, 2 expected-different
+sh scripts/parity.sh              # 72 pairs, 0 mismatched, 27 expected-different
 sh scripts/parity.sh <other_dir>  # or point it at any directory of .md
 ```
 
@@ -64,8 +64,11 @@ generator in the Mere repository answers it a fourth:
 Only the first tracks fenced code blocks. The other three read every line.
 `test/edge/fence_and_escape.md` is eight lines and shows what that costs:
 
-- `## not a heading` **inside a fence** renders as `<pre>` and appears in the
-  table of contents as a heading. One line, two answers.
+- `## not a heading` **inside a fence** rendered as `<pre>` while appearing in
+  the table of contents as a heading. One line, two answers. **Fixed.** In the
+  real documentation this was not a hypothetical: shell comments inside examples
+  were in the table of contents, so it listed `→ 252`, `#!/bin/sh`, and
+  `open http://localhost:8080/ in a browser` as sections.
 - `#### four hashes` rendered as a **paragraph** while appearing in the table of
   contents as a **depth-4 heading**. One line, two answers again. **Fixed:**
   headings go to six levels, and one function decides, because there is no
@@ -77,14 +80,14 @@ None of these are bugs in three places. They are one missing thing in one place:
 there is no parse, so there is nothing for the three outputs to be three views
 *of*.
 
-    parse   : str list -> block list      <- exists
-    to_html : block list -> str           <- exists
-    to_text : block list -> str           <- next
-    toc     : block list -> heading list  <- next
+    Md.parse        : str list -> block list
+    MarkdownHtml.to_html : block list -> str
+    MdText.of_blocks     : block list -> str
+    MdToc.headings       : block list -> (int * str) list
 
-`toc` will return headings rather than a rendered list, so that a consumer that
-wants slugs and anchors builds them itself instead of becoming a fifth
-definition.
+`MdToc.headings` returns headings rather than a rendered list, so that a consumer
+wanting slugs and anchors builds them from the data instead of counting hashes
+for itself and becoming the fifth answer.
 
 The document is deliberately shallow for now. A block holds the *raw source* of
 its inline content, because the inline scanner does not recurse — `**a `b` c**`
@@ -109,6 +112,15 @@ An unlisted difference fails. So does a listed one that has **stopped**
 differing, because that means either the fix was lost or the entry outlived it —
 a gate has to notice when it has been fixed, not only when it has been broken.
 All three paths were checked by making each of them happen.
+
+Moving text and the table of contents onto the parse changed 825 lines across 25
+of the 72 pairs, which is too many to read. They were checked rather than
+skimmed: plain text is line for line with its source, so for every differing
+line the new output must be **the source line itself** (code, left alone) or
+**empty** (a fence marker), and the old output must be the old line rule applied
+to that same source line. 705 lines of the first kind, 120 of the second, none
+unaccounted for. Line counts were identical in every file, which is the part that
+would have broken had `Blank` been wrong.
 
 ## A note on CommonMark
 
