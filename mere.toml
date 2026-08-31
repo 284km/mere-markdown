@@ -1,0 +1,4 @@
+[package]
+name = "mere-markdown"
+path = "github.com/284km/mere-markdown"
+version = "0.1.0"
