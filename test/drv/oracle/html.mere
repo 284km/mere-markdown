@@ -1,0 +1,3 @@
+import "../../../oracle/to_html.mere";
+let path = match args () with Cons (p, _) -> p | Nil -> "";
+print (MarkdownHtml.render (read_lines path))
