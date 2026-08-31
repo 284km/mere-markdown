@@ -1,0 +1,190 @@
+// src/parse.mere — markdown to a document, and nothing about how it is shown.
+//
+// This is the whole reason the repository exists. The converter used to answer
+// "what is a heading" in three places and the docs site answered it in a fourth,
+// and only one of the four knew what a fenced code block was. There is one
+// answer here and the outputs are views of it.
+//
+// Nothing here throws the source away. A parser that keeps only what its first
+// consumer needs decides for every consumer after it.
+
+// A document. Inline content is still the raw source text of the span: the
+// inline scanner does not recurse (`**a `b` c**` keeps its backticks literally),
+// so a string is what it actually holds. Splitting that into spans is a later
+// commit, and it is a separate one because it is a separate risk.
+//
+// A list item keeps its marker as it was written. HTML does not need it — a
+// `<li>` is a `<li>` whether the source said `-` or `3.` — but plain text is
+// defined as the source with its decorations removed, and it cannot remove what
+// the parser already threw away.
+type item = { depth: int, kind: int, marker: str, text: str };
+
+type block =
+  | Heading of (int * str)          // level 1..6
+  | Para of str list                // the soft-wrapped lines, still separate
+  | Hr of str                       // the rule as written: `---` and `***` differ to a reader
+  | Fence of (str * str list * bool)  // language, lines, whether it was closed
+  | Quote of str list               // one entry per `> ` line
+  | Table of str list               // the `|` lines, separator row included
+  | Bullets of item list
+  | Blank;                          // HTML wants none of these; plain text is line for line
+
+// What the parser is in the middle of. A blank line, or a line of another kind,
+// ends it — which is why an unterminated fence is the one state that can still
+// be open when the input runs out, and why `Fence` carries whether it closed.
+type pstate =
+  | SNone
+  | SFence of (str * str list)
+  | STable of str list
+  | SQuote of str list
+  | SList of item list
+  | SPara of str list;
+
+module Md {
+
+let starts_with = fn (s: str) -> fn (p: str) ->
+  let lp = str_len p in
+  if str_len s < lp then false
+  else substring s 0 lp == p;
+
+// return the number of leading spaces in a line
+let count_leading_spaces = fn (line: str) ->
+  let n = str_len line in
+  let rec scan = fn i ->
+    if i >= n then i
+    else if char_at line i == " " then scan (i + 1)
+    else i
+  in
+  scan 0;
+
+// detect a list item: returns indent (depth in 2-space units) + kind + content offset
+//   return: (is_list, depth, kind, content_offset)
+
+let detect_list_item = fn (line: str) ->
+  let n = str_len line in
+  let lead = count_leading_spaces line in
+  let depth = lead / 2 in
+  let body_start = lead in
+  if body_start >= n then (false, 0, 0, 0)
+  else if char_at line body_start == "-"
+       && body_start + 1 < n && char_at line (body_start + 1) == " " then
+    (true, depth, 1, body_start + 2)
+  else if is_digit (char_at line body_start) then
+    let rec scan = fn i ->
+      if i >= n then -1
+      else if is_digit (char_at line i) then scan (i + 1)
+      else i
+    in
+    let end_digits = scan body_start in
+    if end_digits <= body_start then (false, 0, 0, 0)
+    else if end_digits + 1 >= n then (false, 0, 0, 0)
+    else if char_at line end_digits == "." && char_at line (end_digits + 1) == " "
+    then (true, depth, 2, end_digits + 2)
+    else (false, 0, 0, 0)
+  else (false, 0, 0, 0);
+
+// whether a line is a table row starting with `|`
+let is_table_row = fn (line: str) ->
+  let n = str_len line in
+  if n < 1 then false
+  else char_at line 0 == "|";
+
+// whether the line consists solely of `---` / `***` / `___` (HR detection)
+let is_hr = fn (line: str) ->
+  let n = str_len line in
+  if n < 3 then false
+  else
+    let c = char_at line 0 in
+    if c != "-" && c != "*" && c != "_" then false
+    else
+      let rec check = fn i ->
+        if i >= n then true
+        else if char_at line i == c then check (i + 1)
+        else false
+      in check 0;
+
+// Is this line a heading, and if so how deep and what does it say. Level 0 is
+// the answer "no", which every font has to have too.
+//
+// One function, because there is no such thing as a second opinion about this
+// that is not a bug. Longest prefix first, or `###### x` is an h1 whose text
+// begins with five hashes.
+let heading_of = fn (line: str) ->
+  let n = str_len line in
+  if starts_with line "###### " then (6, substring line 7 n)
+  else if starts_with line "##### " then (5, substring line 6 n)
+  else if starts_with line "#### " then (4, substring line 5 n)
+  else if starts_with line "### " then (3, substring line 4 n)
+  else if starts_with line "## " then (2, substring line 3 n)
+  else if starts_with line "# " then (1, substring line 2 n)
+  else (0, "");
+
+// Convert a single-line block (heading / HR) to HTML. Kept because consumers
+// import it. It asks `heading_of` rather than deciding again, and `---` is
+// still a rule before it is anything else.
+
+// Close whatever the parser was in the middle of and put it on the document.
+// The document is built in reverse and turned around once at the end.
+let flush = fn (st: pstate) -> fn (acc: block list) ->
+  match st with
+  | SNone -> acc
+  | SFence (lang, ls) -> Cons (Fence (lang, list_rev ls, false), acc)
+  | STable rows -> Cons (Table (list_rev rows), acc)
+  | SQuote ts -> Cons (Quote (list_rev ts), acc)
+  | SList items -> Cons (Bullets (list_rev items), acc)
+  | SPara ps -> Cons (Para (list_rev ps), acc);
+
+let parse = fn (lines: str list) ->
+  let rec go = fn (ls: str list) -> fn (st: pstate) -> fn (acc: block list) ->
+    match ls with
+    | Nil -> list_rev (flush st acc)
+    | Cons (line, rest) ->
+      // Inside a fence nothing else is markdown, which is the whole reason the
+      // other two outputs disagree with this one: they have no such state.
+      match st with
+      | SFence (lang, body) ->
+        if starts_with line "```" then
+          go rest SNone (Cons (Fence (lang, list_rev body, true), acc))
+        else go rest (SFence (lang, Cons (line, body))) acc
+      | _ ->
+        if starts_with line "```" then
+          let lang = str_trim (substring line 3 (str_len line)) in
+          go rest (SFence (lang, Nil)) (flush st acc)
+        else if is_table_row line then
+          match st with
+          | STable rows -> go rest (STable (Cons (line, rows))) acc
+          | _ -> go rest (STable (Cons (line, Nil))) (flush st acc)
+        else if starts_with line "> " then
+          let t = substring line 2 (str_len line) in
+          match st with
+          | SQuote ts -> go rest (SQuote (Cons (t, ts))) acc
+          | _ -> go rest (SQuote (Cons (t, Nil))) (flush st acc)
+        else
+          let (is_list, d, k, off) = detect_list_item line in
+          if is_list then
+            let lead = count_leading_spaces line in
+            let it = item { depth = d + 1, kind = k,
+                            marker = substring line lead off,
+                            text = substring line off (str_len line) } in
+            match st with
+            | SList items -> go rest (SList (Cons (it, items))) acc
+            | _ -> go rest (SList (Cons (it, Nil))) (flush st acc)
+          else
+            let n = str_len line in
+            // The same order `render_line` uses, and the order matters: a line
+            // of dashes is a rule before it is anything else.
+            if n == 0 then go rest SNone (Cons (Blank, flush st acc))
+            else if is_hr line then go rest SNone (Cons (Hr line, flush st acc))
+            else
+            let (lvl, htext) = heading_of line in
+            if lvl > 0 then
+              go rest SNone (Cons (Heading (lvl, htext), flush st acc))
+            else
+              match st with
+              | SPara ps -> go rest (SPara (Cons (line, ps))) acc
+              | _ -> go rest (SPara (Cons (line, Nil))) (flush st acc)
+  in go lines SNone Nil;
+
+// ===== to_html: blocks to HTML =====
+
+};   // end of `module Md`
