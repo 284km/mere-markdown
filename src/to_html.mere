@@ -36,16 +36,27 @@ let rec __md_find_single = fn (s: str) -> fn (n: int) -> fn (c: str) -> fn (j: i
 
 // A document. Inline content is still the raw source text of the span: the
 // inline scanner does not recurse (`**a `b` c**` keeps its backticks literally),
-// so a string is what it actually holds. Splitting that into spans is the next
+// so a string is what it actually holds. Splitting that into spans is a later
 // commit, and it is a separate one because it is a separate risk.
+//
+// Nothing here throws the source away. A parser that keeps only what its first
+// consumer needs decides for every consumer after it, and the second one here is
+// plain text, which is defined as the source with its decorations removed.
+//
+// A list item keeps its marker as it was written. HTML does not need it — a
+// `<li>` is a `<li>` whether the source said `-` or `3.` — but plain text is
+// defined as the source with its decorations removed, and it cannot remove what
+// the parser already threw away.
+type item = { depth: int, kind: int, marker: str, text: str };
+
 type block =
   | Heading of (int * str)          // level 1..3 only, which is a defect the AST now names
-  | Para of str                     // soft-wrapped lines, already joined with a space
-  | Hr
+  | Para of str list                // the soft-wrapped lines, still separate
+  | Hr of str                       // the rule as written: `---` and `***` differ to a reader
   | Fence of (str * str list * bool)  // language, lines, whether it was closed
   | Quote of str list               // one entry per `> ` line
   | Table of str list               // the `|` lines, separator row included
-  | Bullets of (int * int * str) list;  // (depth from 1, kind 1=ul 2=ol, text)
+  | Bullets of item list;
 
 // What the parser is in the middle of. A blank line, or a line of another kind,
 // ends it — which is why an unterminated fence is the one state that can still
@@ -55,7 +66,7 @@ type pstate =
   | SFence of (str * str list)
   | STable of str list
   | SQuote of str list
-  | SList of (int * int * str) list
+  | SList of item list
   | SPara of str list;
 
 module MarkdownHtml {
@@ -371,7 +382,7 @@ let flush = fn (st: pstate) -> fn (acc: block list) ->
   | STable rows -> Cons (Table (list_rev rows), acc)
   | SQuote ts -> Cons (Quote (list_rev ts), acc)
   | SList items -> Cons (Bullets (list_rev items), acc)
-  | SPara ps -> Cons (Para (str_join " " (list_rev ps)), acc);
+  | SPara ps -> Cons (Para (list_rev ps), acc);
 
 let parse = fn (lines: str list) ->
   let rec go = fn (ls: str list) -> fn (st: pstate) -> fn (acc: block list) ->
@@ -401,16 +412,19 @@ let parse = fn (lines: str list) ->
         else
           let (is_list, d, k, off) = detect_list_item line in
           if is_list then
-            let t = substring line off (str_len line) in
+            let lead = count_leading_spaces line in
+            let it = item { depth = d + 1, kind = k,
+                            marker = substring line lead off,
+                            text = substring line off (str_len line) } in
             match st with
-            | SList items -> go rest (SList (Cons ((d + 1, k, t), items))) acc
-            | _ -> go rest (SList (Cons ((d + 1, k, t), Nil))) (flush st acc)
+            | SList items -> go rest (SList (Cons (it, items))) acc
+            | _ -> go rest (SList (Cons (it, Nil))) (flush st acc)
           else
             let n = str_len line in
             // The same order `render_line` uses, and the order matters: a line
             // of dashes is a rule before it is anything else.
             if n == 0 then go rest SNone (flush st acc)
-            else if is_hr line then go rest SNone (Cons (Hr, flush st acc))
+            else if is_hr line then go rest SNone (Cons (Hr line, flush st acc))
             else if starts_with line "### " then
               go rest SNone (Cons (Heading (3, substring line 4 n), flush st acc))
             else if starts_with line "## " then
@@ -470,12 +484,11 @@ let render_table = fn (out) -> fn (rows: str list) ->
     let _ = strbuf_push out "</thead></table>\n" in ()
   else ();
 
-let render_bullets = fn (out) -> fn (items: (int * int * str) list) ->
+let render_bullets = fn (out) -> fn (items: item list) ->
   let state = map_new () in
   let _ = map_set state "list_depth" 0 in
-  let _ = list_iter items (fn it ->
-    let (d, k, t) = it in
-    emit_list_item state out d k t) in
+  let _ = list_iter items (fn (it: item) ->
+    emit_list_item state out it.depth it.kind it.text) in
   close_list_if_open state out;
 
 // Consecutive `> ` lines are one blockquote, joined with a space. The original
@@ -495,9 +508,12 @@ let to_html = fn (bs: block list) ->
       let tag = show lvl in
       let _ = strbuf_push out ("<h" ++ tag ++ ">" ++ render_inline text
                                ++ "</h" ++ tag ++ ">\n") in ()
-    | Para text ->
-      let _ = strbuf_push out ("<p>" ++ render_inline text ++ "</p>\n") in ()
-    | Hr -> let _ = strbuf_push out "<hr>\n" in ()
+    | Para lines ->
+      // Soft-wrapped lines are one paragraph, and the inline scan runs over the
+      // join rather than each line, so a bold pair may straddle a line break.
+      let _ = strbuf_push out ("<p>" ++ render_inline (str_join " " lines)
+                               ++ "</p>\n") in ()
+    | Hr _ -> let _ = strbuf_push out "<hr>\n" in ()
     | Fence (lang, body, closed) -> render_fence out lang body closed
     | Quote texts -> render_quote out texts
     | Table rows -> render_table out rows
