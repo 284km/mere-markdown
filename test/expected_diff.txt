@@ -1,0 +1,9 @@
+# Where the new implementation is allowed to disagree with the frozen oracle.
+#
+#   <output>  <file>  <reason>
+#
+# One line per fixed defect per file. A difference that is not listed fails the
+# run, and so does a line whose difference has gone away or was never reached.
+
+html  codegen.md            h4 is a heading, not a paragraph beginning with four hashes
+html  fence_and_escape.md   h4 is a heading, not a paragraph beginning with four hashes

@@ -26,7 +26,7 @@ document goes through both, for all three outputs, and the bytes have to match.
 No expected output was written by hand.
 
 ```sh
-sh scripts/parity.sh              # 72 pairs, 0 mismatched
+sh scripts/parity.sh              # 72 pairs, 0 mismatched, 2 expected-different
 sh scripts/parity.sh <other_dir>  # or point it at any directory of .md
 ```
 
@@ -66,8 +66,10 @@ Only the first tracks fenced code blocks. The other three read every line.
 
 - `## not a heading` **inside a fence** renders as `<pre>` and appears in the
   table of contents as a heading. One line, two answers.
-- `#### four hashes` renders as a **paragraph** and appears in the table of
-  contents as a **depth-4 heading**. One line, two answers again.
+- `#### four hashes` rendered as a **paragraph** while appearing in the table of
+  contents as a **depth-4 heading**. One line, two answers again. **Fixed:**
+  headings go to six levels, and one function decides, because there is no
+  second opinion about this that is not a bug.
 - `<angle> & ampersand` in a paragraph reaches the HTML unescaped. Escaping is
   applied inside code blocks and nowhere else.
 
@@ -91,11 +93,22 @@ that into spans is a separate commit because it is a separate risk.
 
 ## Deliberate differences come one at a time
 
-The three defects above are real, and fixing them changes bytes — which is
-exactly what `parity.sh` is built to notice. So they are not fixed during the
-refactor. The AST lands with parity green, and each behaviour change is a
-separate commit afterwards that says what moved and why. A diff that contains
-both an intended change and a regression is a diff in which neither can be seen.
+The defects above are real, and fixing them changes bytes — which is exactly what
+`parity.sh` is built to notice. So they were not fixed during the refactor. The
+AST landed with parity green, and each behaviour change is a separate commit
+afterwards. A diff that contains both an intended change and a regression is a
+diff in which neither can be seen.
+
+That leaves the gate needing somewhere to say *the oracle is wrong here*, or it
+gets deleted the first time it is right to disagree. `test/expected_diff.txt`
+names one output, one file, and the reason:
+
+    html  codegen.md   h4 is a heading, not a paragraph beginning with four hashes
+
+An unlisted difference fails. So does a listed one that has **stopped**
+differing, because that means either the fix was lost or the entry outlived it —
+a gate has to notice when it has been fixed, not only when it has been broken.
+All three paths were checked by making each of them happen.
 
 ## A note on CommonMark
 
