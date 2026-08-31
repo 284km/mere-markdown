@@ -84,7 +84,8 @@ None of these are bugs in three places. They are one missing thing in one place:
 there is no parse, so there is nothing for the three outputs to be three views
 *of*.
 
-    Md.parse        : str list -> block list
+    Md.parse             : str list -> block list
+    Md.spans             : str -> span list
     MarkdownHtml.to_html : block list -> str
     MdText.of_blocks     : block list -> str
     MdToc.headings       : block list -> (int * str) list
@@ -93,10 +94,18 @@ there is no parse, so there is nothing for the three outputs to be three views
 wanting slugs and anchors builds them from the data instead of counting hashes
 for itself and becoming the fifth answer.
 
-The document is deliberately shallow for now. A block holds the *raw source* of
-its inline content, because the inline scanner does not recurse — `**a `b` c**`
-keeps its backticks literally — so a string is what it honestly holds. Splitting
-that into spans is a separate commit because it is a separate risk.
+A block holds the raw source of its inline content and `Md.spans` cuts it into
+runs on demand, which is the split that lets something other than a browser show
+a document: `Strong "the docs"` can be drawn in a window, and `<strong>the
+docs</strong>` cannot.
+
+The scan does not recurse — `**a `b` c**` keeps its backticks literally — so each
+run carries the raw source between its markers. That is an honest description of
+the behaviour rather than a simplification of it.
+
+A `Link` keeps the URL as it was written. Rewriting `.md` to `.html` is what a
+generated site does to resolve links between its own pages; it is not what the
+source said, so it lives in the HTML renderer.
 
 ## Deliberate differences come one at a time
 

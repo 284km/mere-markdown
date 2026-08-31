@@ -17,6 +17,23 @@
 // `<li>` is a `<li>` whether the source said `-` or `3.` — but plain text is
 // defined as the source with its decorations removed, and it cannot remove what
 // the parser already threw away.
+// A run of inline content. The scanner does not recurse - `**a `b` c**` keeps
+// its backticks literally - so each of these carries the raw source between its
+// markers, and that is an honest description of the old behaviour rather than a
+// simplification of it.
+//
+// A link keeps the URL as it was written. Turning `.md` into `.html` is what one
+// consumer does to resolve links in a generated site; it is not what the source
+// said.
+type span =
+  | Text of str
+  | Strong of str
+  | Em of str
+  | Del of str
+  | Code of str
+  | Link of (str * str)        // text, url
+  | Image of (str * str);      // alt, url
+
 type item = { depth: int, kind: int, marker: str, text: str };
 
 type block =
@@ -39,6 +56,25 @@ type pstate =
   | SQuote of str list
   | SList of item list
   | SPara of str list;
+
+// Note: when inner-lifted fns refer to each other (here `go` calls
+// `find_double` / `find_single`), the capture chain becomes complex, so
+// we write them as top-level fns outside the module. Phase 39.A2 added
+// support for "inner-lifted fn in a value position", but mutual
+// references between inner-lifted fns still require this workaround.
+let rec __md_find_double = fn (s: str) -> fn (n: int) -> fn (c: str) -> fn (j: int) ->
+  // On no-match, return `n` (= end of string). If we returned `j` on
+  // `j + 1 >= n`, an off-by-one would drop the trailing byte and corrupt
+  // a UTF-8 multi-byte character (e.g. a trailing 3-byte char E3 81 AB
+  // would be left as E3 81 and become a replacement char).
+  if j + 1 >= n then n
+  else if char_at s j == c && char_at s (j + 1) == c then j
+  else __md_find_double s n c (j + 1);
+
+let rec __md_find_single = fn (s: str) -> fn (n: int) -> fn (c: str) -> fn (j: int) ->
+  if j >= n then j
+  else if char_at s j == c then j
+  else __md_find_single s n c (j + 1);
 
 module Md {
 
@@ -125,6 +161,55 @@ let heading_of = fn (line: str) ->
 
 // Close whatever the parser was in the middle of and put it on the document.
 // The document is built in reverse and turned around once at the end.
+// The inline scan, as data. Literal runs are carried as start offsets and cut
+// out with `substring` rather than appended a character at a time, so a long
+// paragraph costs its length and not its length squared.
+let spans = fn (s: str) ->
+  let n = str_len s in
+  let rec go = fn (i: int) -> fn (start: int) -> fn (acc: span list) ->
+    if i >= n then
+      list_rev (if i > start then Cons (Text (substring s start i), acc) else acc)
+    else
+      let c = char_at s i in
+      // The literal run so far, closed off because a marker is about to open.
+      // The fall-through cases below deliberately do not use it: an unmatched
+      // `[` is text, and keeping `start` where it is leaves it in the run.
+      let lit = if i > start then Cons (Text (substring s start i), acc) else acc in
+      if c == "*" && i + 1 < n && char_at s (i + 1) == "*" then
+        let e = __md_find_double s n "*" (i + 2) in
+        go (e + 2) (e + 2) (Cons (Strong (substring s (i + 2) e), lit))
+      else if c == "~" && i + 1 < n && char_at s (i + 1) == "~" then
+        let e = __md_find_double s n "~" (i + 2) in
+        go (e + 2) (e + 2) (Cons (Del (substring s (i + 2) e), lit))
+      else if c == "*" then
+        let e = __md_find_single s n "*" (i + 1) in
+        go (e + 1) (e + 1) (Cons (Em (substring s (i + 1) e), lit))
+      else if c == "`" then
+        let e = __md_find_single s n "`" (i + 1) in
+        go (e + 1) (e + 1) (Cons (Code (substring s (i + 1) e), lit))
+      else if c == "!" && i + 1 < n && char_at s (i + 1) == "[" then
+        let cb = __md_find_single s n "]" (i + 2) in
+        if cb >= n then go (i + 1) start acc
+        else if cb + 1 >= n || char_at s (cb + 1) != "(" then go (i + 1) start acc
+        else
+          let cp = __md_find_single s n ")" (cb + 2) in
+          if cp >= n then go (i + 1) start acc
+          else
+            go (cp + 1) (cp + 1)
+              (Cons (Image (substring s (i + 2) cb, substring s (cb + 2) cp), lit))
+      else if c == "[" then
+        let cb = __md_find_single s n "]" (i + 1) in
+        if cb >= n then go (i + 1) start acc
+        else if cb + 1 >= n || char_at s (cb + 1) != "(" then go (i + 1) start acc
+        else
+          let cp = __md_find_single s n ")" (cb + 2) in
+          if cp >= n then go (i + 1) start acc
+          else
+            go (cp + 1) (cp + 1)
+              (Cons (Link (substring s (i + 1) cb, substring s (cb + 2) cp), lit))
+      else go (i + 1) start acc
+  in go 0 0 Nil;
+
 let flush = fn (st: pstate) -> fn (acc: block list) ->
   match st with
   | SNone -> acc
