@@ -60,15 +60,15 @@ let spans_to_html = fn (xs: span list) ->
   let out = strbuf_new () in
   let _ = list_iter xs (fn sp ->
     let _ = match sp with
-      | Text t -> strbuf_push out (escape_html t)
+      | Run t -> strbuf_push out (escape_html t)
       | Strong t -> strbuf_push out ("<strong>" ++ escape_html t ++ "</strong>")
-      | Em t -> strbuf_push out ("<em>" ++ escape_html t ++ "</em>")
-      | Del t -> strbuf_push out ("<del>" ++ escape_html t ++ "</del>")
-      | Code t -> strbuf_push out ("<code>" ++ escape_html t ++ "</code>")
-      | Link (t, u) ->
+      | Emph t -> strbuf_push out ("<em>" ++ escape_html t ++ "</em>")
+      | Strike t -> strbuf_push out ("<del>" ++ escape_html t ++ "</del>")
+      | Mono t -> strbuf_push out ("<code>" ++ escape_html t ++ "</code>")
+      | Href (t, u) ->
         strbuf_push out ("<a href=\"" ++ escape_attr (site_url u) ++ "\">"
                          ++ escape_html t ++ "</a>")
-      | Image (a, u) ->
+      | Pic (a, u) ->
         strbuf_push out ("<img alt=\"" ++ escape_attr a ++ "\" src=\""
                          ++ escape_attr u ++ "\">") in
     ()) in

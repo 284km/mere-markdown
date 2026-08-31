@@ -25,14 +25,19 @@
 // A link keeps the URL as it was written. Turning `.md` into `.html` is what one
 // consumer does to resolve links in a generated site; it is not what the source
 // said.
+//
+// The names are deliberately not `Text` / `Code` / `Link` / `Image`. A package's
+// constructors land in its consumer's namespace, and the first real consumer of
+// this one imports an HTML builder whose own tree already has a `Text`. Generic
+// names in a shared package are a defect in the package.
 type span =
-  | Text of str
+  | Run of str
   | Strong of str
-  | Em of str
-  | Del of str
-  | Code of str
-  | Link of (str * str)        // text, url
-  | Image of (str * str);      // alt, url
+  | Emph of str
+  | Strike of str
+  | Mono of str
+  | Href of (str * str)        // text, url
+  | Pic of (str * str);      // alt, url
 
 type item = { depth: int, kind: int, marker: str, text: str };
 
@@ -168,25 +173,25 @@ let spans = fn (s: str) ->
   let n = str_len s in
   let rec go = fn (i: int) -> fn (start: int) -> fn (acc: span list) ->
     if i >= n then
-      list_rev (if i > start then Cons (Text (substring s start i), acc) else acc)
+      list_rev (if i > start then Cons (Run (substring s start i), acc) else acc)
     else
       let c = char_at s i in
       // The literal run so far, closed off because a marker is about to open.
       // The fall-through cases below deliberately do not use it: an unmatched
       // `[` is text, and keeping `start` where it is leaves it in the run.
-      let lit = if i > start then Cons (Text (substring s start i), acc) else acc in
+      let lit = if i > start then Cons (Run (substring s start i), acc) else acc in
       if c == "*" && i + 1 < n && char_at s (i + 1) == "*" then
         let e = __md_find_double s n "*" (i + 2) in
         go (e + 2) (e + 2) (Cons (Strong (substring s (i + 2) e), lit))
       else if c == "~" && i + 1 < n && char_at s (i + 1) == "~" then
         let e = __md_find_double s n "~" (i + 2) in
-        go (e + 2) (e + 2) (Cons (Del (substring s (i + 2) e), lit))
+        go (e + 2) (e + 2) (Cons (Strike (substring s (i + 2) e), lit))
       else if c == "*" then
         let e = __md_find_single s n "*" (i + 1) in
-        go (e + 1) (e + 1) (Cons (Em (substring s (i + 1) e), lit))
+        go (e + 1) (e + 1) (Cons (Emph (substring s (i + 1) e), lit))
       else if c == "`" then
         let e = __md_find_single s n "`" (i + 1) in
-        go (e + 1) (e + 1) (Cons (Code (substring s (i + 1) e), lit))
+        go (e + 1) (e + 1) (Cons (Mono (substring s (i + 1) e), lit))
       else if c == "!" && i + 1 < n && char_at s (i + 1) == "[" then
         let cb = __md_find_single s n "]" (i + 2) in
         if cb >= n then go (i + 1) start acc
@@ -196,7 +201,7 @@ let spans = fn (s: str) ->
           if cp >= n then go (i + 1) start acc
           else
             go (cp + 1) (cp + 1)
-              (Cons (Image (substring s (i + 2) cb, substring s (cb + 2) cp), lit))
+              (Cons (Pic (substring s (i + 2) cb, substring s (cb + 2) cp), lit))
       else if c == "[" then
         let cb = __md_find_single s n "]" (i + 1) in
         if cb >= n then go (i + 1) start acc
@@ -206,7 +211,7 @@ let spans = fn (s: str) ->
           if cp >= n then go (i + 1) start acc
           else
             go (cp + 1) (cp + 1)
-              (Cons (Link (substring s (i + 1) cb, substring s (cb + 2) cp), lit))
+              (Cons (Href (substring s (i + 1) cb, substring s (cb + 2) cp), lit))
       else go (i + 1) start acc
   in go 0 0 Nil;
 
