@@ -5,8 +5,26 @@
 # One line per fixed defect per file. A difference that is not listed fails the
 # run, and so does a line whose difference has gone away or was never reached.
 
-html  codegen.md            h4 is a heading, not a paragraph beginning with four hashes
-html  fence_and_escape.md   h4 is a heading, not a paragraph beginning with four hashes
+
+# Text and attributes are escaped. `--ram <MB>` in the documentation used to
+# reach the browser as a tag and be swallowed; now it is visible.
+html  bare-metal.md            text and attributes are escaped
+html  changelog.md             text and attributes are escaped
+html  codegen.md               text and attributes are escaped; h4 is a heading, not a paragraph of four hashes
+html  db.md                    text and attributes are escaped
+html  http-demos.md            text and attributes are escaped
+html  language-reference.md    text and attributes are escaped
+html  lsp.md                   text and attributes are escaped
+html  memory-model.md          text and attributes are escaped
+html  packages.md              text and attributes are escaped
+html  patterns.md              text and attributes are escaped
+html  reserved-names.md        text and attributes are escaped
+html  stdlib-reference.md      text and attributes are escaped
+html  tour.md                  text and attributes are escaped
+html  tutorial-rest-api.md     text and attributes are escaped
+html  tutorial-type-inference.md text and attributes are escaped
+html  tutorial.md              text and attributes are escaped
+html  fence_and_escape.md      text and attributes are escaped; h4 is a heading, not a paragraph of four hashes
 
 # Both of these are the same defect: the two line-oriented outputs had no
 # idea what a fenced code block was, so they applied markdown rules to code.

@@ -26,7 +26,7 @@ document goes through both, for all three outputs, and the bytes have to match.
 No expected output was written by hand.
 
 ```sh
-sh scripts/parity.sh              # 72 pairs, 0 mismatched, 27 expected-different
+sh scripts/parity.sh              # 72 pairs, 0 mismatched, 42 expected-different
 sh scripts/parity.sh <other_dir>  # or point it at any directory of .md
 ```
 
@@ -73,8 +73,12 @@ Only the first tracks fenced code blocks. The other three read every line.
   contents as a **depth-4 heading**. One line, two answers again. **Fixed:**
   headings go to six levels, and one function decides, because there is no
   second opinion about this that is not a bug.
-- `<angle> & ampersand` in a paragraph reaches the HTML unescaped. Escaping is
-  applied inside code blocks and nowhere else.
+- `<angle> & ampersand` in a paragraph reached the HTML unescaped, because
+  escaping was applied inside code blocks and nowhere else. **Fixed**, and it was
+  not pedantic: the documentation writes `--ram <MB>`, which reached the browser
+  as a tag, so every reader of that page was shown `--ram ` with the rest
+  silently swallowed. Attribute values get the quote escaped too, since a `"` in
+  a URL otherwise ends the attribute and puts the rest into the tag.
 
 None of these are bugs in three places. They are one missing thing in one place:
 there is no parse, so there is nothing for the three outputs to be three views
@@ -112,6 +116,12 @@ An unlisted difference fails. So does a listed one that has **stopped**
 differing, because that means either the fix was lost or the entry outlived it —
 a gate has to notice when it has been fixed, not only when it has been broken.
 All three paths were checked by making each of them happen.
+
+Escaping was checked with an invariant rather than by reading: if the change is
+only escaping, then unescaping **both** outputs in a single pass must make them
+identical. Fifteen of the seventeen changed files satisfied it outright; the
+other two differed at exactly the `#### ` line already recorded, and satisfied it
+once that fix was applied to the oracle as well.
 
 Moving text and the table of contents onto the parse changed 825 lines across 25
 of the 72 pairs, which is too many to read. They were checked rather than

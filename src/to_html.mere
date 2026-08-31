@@ -33,6 +33,40 @@ let rec __md_find_single = fn (s: str) -> fn (n: int) -> fn (c: str) -> fn (j: i
 
 module MarkdownHtml {
 
+// Text, as HTML. Not only inside code blocks: a `<` in a sentence is a `<` in
+// the output, and the browser reads it as a tag. The documentation this was
+// split out of writes `--ram <MB>`, and every reader of that page has been shown
+// `--ram ` with the rest silently swallowed as an unknown element.
+let escape_html = fn (s: str) ->
+  let buf = strbuf_new () in
+  let n = str_len s in
+  let rec loop = fn i ->
+    if i >= n then ()
+    else
+      let c = char_at s i in
+      let _ = if c == "<" then strbuf_push buf "&lt;"
+              else if c == ">" then strbuf_push buf "&gt;"
+              else if c == "&" then strbuf_push buf "&amp;"
+              else strbuf_push buf c in
+      loop (i + 1) in
+  let _ = loop 0 in
+  strbuf_to_str buf;
+
+// Inside a quoted attribute the quote ends it, so a URL containing one would put
+// whatever follows into the tag rather than into the href.
+let escape_attr = fn (s: str) ->
+  let buf = strbuf_new () in
+  let e = escape_html s in
+  let n = str_len e in
+  let rec loop = fn i ->
+    if i >= n then ()
+    else
+      let c = char_at e i in
+      let _ = if c == "\"" then strbuf_push buf "&quot;" else strbuf_push buf c in
+      loop (i + 1) in
+  let _ = loop 0 in
+  strbuf_to_str buf;
+
 let render_inline = fn (s: str) ->
   let n = str_len s in
   let out = strbuf_new () in
@@ -43,26 +77,26 @@ let render_inline = fn (s: str) ->
       if c == "*" && i + 1 < n && char_at s (i + 1) == "*" then
         let _ = strbuf_push out "<strong>" in
         let e = __md_find_double s n "*" (i + 2) in
-        let _ = strbuf_push out (substring s (i + 2) e) in
+        let _ = strbuf_push out (escape_html (substring s (i + 2) e)) in
         let _ = strbuf_push out "</strong>" in
         go (e + 2)
       else if c == "~" && i + 1 < n && char_at s (i + 1) == "~" then
         // GFM strikethrough: ~~text~~ -> <del>text</del>
         let _ = strbuf_push out "<del>" in
         let e = __md_find_double s n "~" (i + 2) in
-        let _ = strbuf_push out (substring s (i + 2) e) in
+        let _ = strbuf_push out (escape_html (substring s (i + 2) e)) in
         let _ = strbuf_push out "</del>" in
         go (e + 2)
       else if c == "*" then
         let _ = strbuf_push out "<em>" in
         let e = __md_find_single s n "*" (i + 1) in
-        let _ = strbuf_push out (substring s (i + 1) e) in
+        let _ = strbuf_push out (escape_html (substring s (i + 1) e)) in
         let _ = strbuf_push out "</em>" in
         go (e + 1)
       else if c == "`" then
         let _ = strbuf_push out "<code>" in
         let e = __md_find_single s n "`" (i + 1) in
-        let _ = strbuf_push out (substring s (i + 1) e) in
+        let _ = strbuf_push out (escape_html (substring s (i + 1) e)) in
         let _ = strbuf_push out "</code>" in
         go (e + 1)
       else if c == "!" && i + 1 < n && char_at s (i + 1) == "[" then
@@ -79,8 +113,8 @@ let render_inline = fn (s: str) ->
           else
             let alt = substring s (i + 2) close_bracket in
             let url = substring s (close_bracket + 2) close_paren in
-            let _ = strbuf_push out ("<img alt=\"" ++ alt ++ "\" src=\""
-                                     ++ url ++ "\">") in
+            let _ = strbuf_push out ("<img alt=\"" ++ escape_attr alt ++ "\" src=\""
+                                     ++ escape_attr url ++ "\">") in
             go (close_paren + 1)
       else if c == "[" then
         // turn [text](url) into <a href="url">text</a>; rewrite `.md` urls to `.html`
@@ -102,11 +136,11 @@ let render_inline = fn (s: str) ->
               if url_len >= 3 && substring url (url_len - 3) url_len == ".md"
               then substring url 0 (url_len - 3) ++ ".html"
               else url in
-            let _ = strbuf_push out ("<a href=\"" ++ final_url ++ "\">"
-                                     ++ text ++ "</a>") in
+            let _ = strbuf_push out ("<a href=\"" ++ escape_attr final_url ++ "\">"
+                                     ++ escape_html text ++ "</a>") in
             go (close_paren + 1)
       else
-        let _ = strbuf_push out c in
+        let _ = strbuf_push out (escape_html c) in
         go (i + 1) in
   let _ = go 0 in
   strbuf_to_str out;
@@ -145,22 +179,6 @@ let render_line = fn (line: str) ->
     else
       let tag = show lvl in
       "<h" ++ tag ++ ">" ++ render_inline text ++ "</h" ++ tag ++ ">";
-
-// HTML character escape (to render `<` `>` `&` literally inside code blocks)
-let escape_html = fn (s: str) ->
-  let buf = strbuf_new () in
-  let n = str_len s in
-  let rec loop = fn i ->
-    if i >= n then ()
-    else
-      let c = char_at s i in
-      let _ = if c == "<" then strbuf_push buf "&lt;"
-              else if c == ">" then strbuf_push buf "&gt;"
-              else if c == "&" then strbuf_push buf "&amp;"
-              else strbuf_push buf c in
-      loop (i + 1) in
-  let _ = loop 0 in
-  strbuf_to_str buf;
 
 // Render one line of cells as a row HTML `<tr><CELL_TAG>...</CELL_TAG></tr>`
 let render_table_row = fn (line: str) -> fn (cell_tag: str) ->
