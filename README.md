@@ -11,11 +11,15 @@ window.
 
 ## Status: mid-refactor, and the old one is watching
 
-    oracle/   the implementation as it stood at the split, frozen, byte for byte
-    src/      the one being rewritten onto an AST
+    parse.mere  the document, and the only thing that decides what markdown means
+    to_html.mere / to_text.mere / toc.mere   three views of it
+    oracle/     the implementation as it stood at the split, frozen, byte for byte
     scripts/parity.sh   runs both over both corpora and demands they agree
 
-**All three outputs now come off one parse.** `src/parse.mere` is the document;
+Modules sit at the root, as they do in the other Mere packages, so a consumer
+writes `import "github.com/284km/mere-markdown/parse.mere"` and not `.../src/…`.
+
+**All three outputs now come off one parse.** `parse.mere` is the document;
 HTML, plain text, and the table of contents are views of it. HTML emits the same
 bytes as the state machine it replaced. The other two do not, and cannot: they
 used to apply markdown rules to the inside of fenced code blocks, and stopping is
