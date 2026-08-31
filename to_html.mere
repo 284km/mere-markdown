@@ -76,26 +76,6 @@ let spans_to_html = fn (xs: span list) ->
 
 let render_inline = fn (s: str) -> spans_to_html (Md.spans s);
 
-// whether a line is a table separator row (e.g. `|----|----|`).
-let is_table_sep = fn (line: str) ->
-  let n = str_len line in
-  if n < 3 then false
-  else if char_at line 0 != "|" then false
-  else
-    let rec check = fn i -> fn has_dash ->
-      if i >= n then has_dash
-      else
-        let c = char_at line i in
-        if c == "|" || c == ":" || c == " " then check (i + 1) has_dash
-        else if c == "-" then check (i + 1) true
-        else false
-    in check 0 false;
-
-// split a table row into a list of cells (`| a | b |` -> ["a", "b"]).
-let parse_cells = fn (line: str) ->
-  let parts = str_split line "|" in
-  let nonempty = list_filter parts (fn s -> str_len (str_trim s) > 0) in
-  list_map nonempty str_trim;
 
 // Convert a single-line block (heading / HR) to HTML. Kept because consumers
 // import it. It asks `heading_of` rather than deciding again, and `---` is
@@ -113,7 +93,7 @@ let render_line = fn (line: str) ->
 
 // Render one line of cells as a row HTML `<tr><CELL_TAG>...</CELL_TAG></tr>`
 let render_table_row = fn (line: str) -> fn (cell_tag: str) ->
-  let cells = parse_cells line in
+  let cells = Md.cells_of line in
   let buf = strbuf_new () in
   let _ = strbuf_push buf "<tr>" in
   let _ = list_iter cells (fn cell ->
@@ -250,7 +230,7 @@ let render_table = fn (out) -> fn (rows: str list) ->
       let _ = strbuf_push out (render_table_row line "th") in
       let _ = strbuf_push out "</thead>\n" in
       let _ = map_set state "phase" 1 in ()
-    else if phase == 1 && is_table_sep line then
+    else if phase == 1 && Md.is_table_sep line then
       let _ = strbuf_push out "<tbody>" in
       let _ = map_set state "phase" 2 in ()
     else

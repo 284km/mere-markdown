@@ -166,6 +166,30 @@ let heading_of = fn (line: str) ->
 
 // Close whatever the parser was in the middle of and put it on the document.
 // The document is built in reverse and turned around once at the end.
+// Splitting a row into cells, and recognising a separator row. Parsing, not
+// showing — they lived in the HTML renderer until a second renderer needed
+// them, and a slide layout was printing `|---|---|` on the page because it
+// had no way to ask what a table row is.
+// whether a line is a table separator row (e.g. `|----|----|`).
+let is_table_sep = fn (line: str) ->
+  let n = str_len line in
+  if n < 3 then false
+  else if char_at line 0 != "|" then false
+  else
+    let rec check = fn i -> fn has_dash ->
+      if i >= n then has_dash
+      else
+        let c = char_at line i in
+        if c == "|" || c == ":" || c == " " then check (i + 1) has_dash
+        else if c == "-" then check (i + 1) true
+        else false
+    in check 0 false;
+
+// split a table row into a list of cells (`| a | b |` -> ["a", "b"]).
+let cells_of = fn (line: str) ->
+  let parts = str_split line "|" in
+  let nonempty = list_filter parts (fn s -> str_len (str_trim s) > 0) in
+  list_map nonempty str_trim;
 // The inline scan, as data. Literal runs are carried as start offsets and cut
 // out with `substring` rather than appended a character at a time, so a long
 // paragraph costs its length and not its length squared.
